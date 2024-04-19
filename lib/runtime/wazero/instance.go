@@ -32,11 +32,11 @@ import (
 // Name represents the name of the interpreter
 const Name = "wazero"
 
-type contextKey string
+type runtimeContextKeyType struct{}
 
-const runtimeContextKey = contextKey("runtime.Context")
+var runtimeContextKey = runtimeContextKeyType{}
 
-var _ runtime.Instance = &Instance{}
+var _ runtime.Instance = (*Instance)(nil)
 
 type cacheMetadata struct {
 	config      wazero.RuntimeConfig
@@ -53,6 +53,7 @@ type Instance struct {
 	wasmByteCode []byte
 	codeHash     common.Hash
 	metadata     cacheMetadata
+	stack        []uint64
 	sync.Mutex
 }
 
@@ -168,46 +169,88 @@ func newRuntimeInstance(ctx context.Context,
 		}).
 		Export("ext_sandbox_memory_teardown_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_ed25519_generate_version_1).
+		// WithFunc(ext_crypto_ed25519_generate_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_ed25519_generate_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_ed25519_generate_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_ed25519_public_keys_version_1).
+		// WithFunc(ext_crypto_ed25519_public_keys_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_ed25519_public_keys_version_1(ctx, m, api.DecodeU32(stack[0]))
+		}), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_ed25519_public_keys_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_ed25519_sign_version_1).
+		// WithFunc(ext_crypto_ed25519_sign_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_ed25519_sign_version_1(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[1]), stack[2])
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_ed25519_sign_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_ed25519_verify_version_1).
+		// WithFunc(ext_crypto_ed25519_verify_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_ed25519_verify_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1], api.DecodeU32(stack[2])))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_ed25519_verify_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_secp256k1_ecdsa_recover_version_1).
+		// WithFunc(ext_crypto_secp256k1_ecdsa_recover_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_secp256k1_ecdsa_recover_version_1(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_secp256k1_ecdsa_recover_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_secp256k1_ecdsa_recover_version_2).
+		// WithFunc(ext_crypto_secp256k1_ecdsa_recover_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_secp256k1_ecdsa_recover_version_2(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_secp256k1_ecdsa_recover_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_ecdsa_verify_version_2).
+		// WithFunc(ext_crypto_ecdsa_verify_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_ecdsa_verify_version_2(ctx, m, api.DecodeU32(stack[0]), stack[1], api.DecodeU32(stack[2])))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_ecdsa_verify_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_secp256k1_ecdsa_recover_compressed_version_1).
+		// WithFunc(ext_crypto_secp256k1_ecdsa_recover_compressed_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_secp256k1_ecdsa_recover_compressed_version_1(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_secp256k1_ecdsa_recover_compressed_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_secp256k1_ecdsa_recover_compressed_version_2).
+		// WithFunc(ext_crypto_secp256k1_ecdsa_recover_compressed_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_secp256k1_ecdsa_recover_compressed_version_2(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_secp256k1_ecdsa_recover_compressed_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_sr25519_generate_version_1).
+		// WithFunc(ext_crypto_sr25519_generate_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_sr25519_generate_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_sr25519_generate_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_sr25519_public_keys_version_1).
+		// WithFunc(ext_crypto_sr25519_public_keys_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_sr25519_public_keys_version_1(ctx, m, api.DecodeU32(stack[0]))
+		}), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_sr25519_public_keys_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_sr25519_sign_version_1).
+		// WithFunc(ext_crypto_sr25519_sign_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_crypto_sr25519_sign_version_1(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[0]), stack[2])
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_sr25519_sign_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_sr25519_verify_version_1).
+		// WithFunc(ext_crypto_sr25519_verify_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_sr25519_verify_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1], api.DecodeU32(stack[2])))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_sr25519_verify_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_sr25519_verify_version_2).
+		// WithFunc(ext_crypto_sr25519_verify_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_sr25519_verify_version_2(ctx, m, api.DecodeU32(stack[0]), stack[1], api.DecodeU32(stack[2])))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_sr25519_verify_version_2").
 		NewFunctionBuilder().
 		WithFunc(ext_crypto_start_batch_verify_version_1).
@@ -216,112 +259,222 @@ func newRuntimeInstance(ctx context.Context,
 		WithFunc(ext_crypto_finish_batch_verify_version_1).
 		Export("ext_crypto_finish_batch_verify_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_trie_blake2_256_root_version_1).
+		// WithFunc(ext_trie_blake2_256_root_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_trie_blake2_256_root_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_trie_blake2_256_root_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_trie_blake2_256_root_version_2).
+		// WithFunc(ext_trie_blake2_256_root_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_trie_blake2_256_root_version_2(ctx, m, stack[0], api.DecodeU32(stack[1])))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_trie_blake2_256_root_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_trie_blake2_256_ordered_root_version_1).
+		// WithFunc(ext_trie_blake2_256_ordered_root_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_trie_blake2_256_ordered_root_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_trie_blake2_256_ordered_root_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_trie_blake2_256_ordered_root_version_2).
+		// WithFunc(ext_trie_blake2_256_ordered_root_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_trie_blake2_256_ordered_root_version_2(ctx, m, stack[0], api.DecodeU32(stack[1])))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_trie_blake2_256_ordered_root_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_trie_blake2_256_verify_proof_version_1).
+		// WithFunc(ext_trie_blake2_256_verify_proof_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_trie_blake2_256_verify_proof_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1], stack[2], stack[3]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_trie_blake2_256_verify_proof_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_trie_blake2_256_verify_proof_version_2).
+		// WithFunc(ext_trie_blake2_256_verify_proof_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_trie_blake2_256_verify_proof_version_2(ctx, m, api.DecodeU32(stack[0]), stack[1], stack[2], stack[3], api.DecodeU32(stack[4])))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_trie_blake2_256_verify_proof_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_misc_print_hex_version_1).
+		// WithFunc(ext_misc_print_hex_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_misc_print_hex_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_misc_print_hex_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_misc_print_num_version_1).
+		// WithFunc(ext_misc_print_num_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_misc_print_num_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_misc_print_num_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_misc_print_utf8_version_1).
+		// WithFunc(ext_misc_print_utf8_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_misc_print_utf8_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_misc_print_utf8_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_misc_runtime_version_version_1).
+		// WithFunc(ext_misc_runtime_version_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_misc_runtime_version_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_misc_runtime_version_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_set_version_1).
+		// WithFunc(ext_default_child_storage_set_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(
+			ctx context.Context, m api.Module, stack []uint64) {
+			ext_default_child_storage_set_version_1(ctx, m, stack[0], stack[1], stack[2])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_default_child_storage_set_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_read_version_1).
+		// WithFunc(ext_default_child_storage_read_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(
+			ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_read_version_1(ctx, m, stack[0], stack[1], stack[2], api.DecodeU32(stack[3]))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_read_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_clear_version_1).
+		// WithFunc(ext_default_child_storage_clear_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_default_child_storage_clear_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_default_child_storage_clear_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_clear_prefix_version_1).
+		// WithFunc(ext_default_child_storage_clear_prefix_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_default_child_storage_clear_prefix_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_default_child_storage_clear_prefix_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_clear_prefix_version_2).
+		// WithFunc(ext_default_child_storage_clear_prefix_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_clear_prefix_version_2(ctx, m, stack[0], stack[1], stack[2])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_clear_prefix_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_exists_version_1).
+		// WithFunc(ext_default_child_storage_exists_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_default_child_storage_exists_version_1(ctx, m, stack[0], stack[1]))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_default_child_storage_exists_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_get_version_1).
+		// WithFunc(ext_default_child_storage_get_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_get_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_get_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_next_key_version_1).
+		// WithFunc(ext_default_child_storage_next_key_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_next_key_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_next_key_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_root_version_1).
+		// WithFunc(ext_default_child_storage_root_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_root_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_root_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_root_version_2).
+		// WithFunc(ext_default_child_storage_root_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_root_version_2(ctx, m, stack[0], api.DecodeU32(stack[1]))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_root_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_storage_kill_version_1).
+		// WithFunc(ext_default_child_storage_storage_kill_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_default_child_storage_storage_kill_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_default_child_storage_storage_kill_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_storage_kill_version_2).
+		// WithFunc(ext_default_child_storage_storage_kill_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_default_child_storage_storage_kill_version_2(ctx, m, stack[0], stack[1]))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_default_child_storage_storage_kill_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_default_child_storage_storage_kill_version_3).
+		// WithFunc(ext_default_child_storage_storage_kill_version_3).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_default_child_storage_storage_kill_version_3(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_default_child_storage_storage_kill_version_3").
 		NewFunctionBuilder().
-		WithFunc(ext_allocator_free_version_1).
+		// WithFunc(ext_allocator_free_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_allocator_free_version_1(ctx, m, api.DecodeU32(stack[0]))
+		}), []api.ValueType{api.ValueTypeI32}, []api.ValueType{}).
 		Export("ext_allocator_free_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_allocator_malloc_version_1).
+		// WithFunc(ext_allocator_malloc_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_allocator_malloc_version_1(ctx, m, api.DecodeU32(stack[0])))
+		}), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_allocator_malloc_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_blake2_128_version_1).
+		// WithFunc(ext_hashing_blake2_128_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_blake2_128_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_blake2_128_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_blake2_256_version_1).
+		// WithFunc(ext_hashing_blake2_256_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_blake2_256_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_blake2_256_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_keccak_256_version_1).
+		// WithFunc(ext_hashing_keccak_256_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_keccak_256_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_keccak_256_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_sha2_256_version_1).
+		// WithFunc(ext_hashing_sha2_256_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_sha2_256_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_sha2_256_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_twox_256_version_1).
+		// WithFunc(ext_hashing_twox_256_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_twox_256_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_twox_256_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_twox_128_version_1).
+		// WithFunc(ext_hashing_twox_128_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_twox_128_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_twox_128_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_hashing_twox_64_version_1).
+		// WithFunc(ext_hashing_twox_64_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_hashing_twox_64_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_hashing_twox_64_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_offchain_index_set_version_1).
+		// WithFunc(ext_offchain_index_set_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_offchain_index_set_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_offchain_index_set_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_offchain_index_clear_version_1).
+		// WithFunc(ext_offchain_index_clear_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_offchain_index_clear_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_offchain_index_clear_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_offchain_local_storage_clear_version_1).
+		// WithFunc(ext_offchain_local_storage_clear_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_offchain_local_storage_clear_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1])
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_offchain_local_storage_clear_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_offchain_is_validator_version_1).
+		// WithFunc(ext_offchain_is_validator_version_1).
+		WithGoFunction(api.GoFunc(func(ctx context.Context, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_offchain_is_validator_version_1(ctx, nil))
+		}), []api.ValueType{}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_offchain_is_validator_version_1").
 		NewFunctionBuilder().
 		WithFunc(ext_offchain_local_storage_compare_and_set_version_1).
@@ -354,52 +507,100 @@ func newRuntimeInstance(ctx context.Context,
 		WithFunc(ext_offchain_http_request_add_header_version_1).
 		Export("ext_offchain_http_request_add_header_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_append_version_1).
+		// WithFunc(ext_storage_append_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_storage_append_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_storage_append_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_changes_root_version_1).
+		// WithFunc(ext_storage_changes_root_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_changes_root_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_changes_root_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_clear_version_1).
+		// WithFunc(ext_storage_clear_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_storage_clear_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_storage_clear_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_clear_prefix_version_1).
+		// WithFunc(ext_storage_clear_prefix_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_storage_clear_prefix_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_storage_clear_prefix_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_clear_prefix_version_2).
+		// WithFunc(ext_storage_clear_prefix_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_clear_prefix_version_2(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_clear_prefix_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_exists_version_1).
+		// WithFunc(ext_storage_exists_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_storage_exists_version_1(ctx, m, stack[0]))
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_storage_exists_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_get_version_1).
+		// WithFunc(ext_storage_get_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_get_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_get_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_next_key_version_1).
+		// WithFunc(ext_storage_next_key_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_next_key_version_1(ctx, m, stack[0])
+		}), []api.ValueType{api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_next_key_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_read_version_1).
+		// WithFunc(ext_storage_read_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_read_version_1(ctx, m, stack[0], stack[1], api.DecodeU32(stack[2]))
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_read_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_root_version_1).
+		// WithFunc(ext_storage_root_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_root_version_1(ctx, m)
+		}), []api.ValueType{}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_root_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_root_version_2).
+		// WithFunc(ext_storage_root_version_2).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = ext_storage_root_version_2(ctx, m, api.DecodeU32(stack[0]))
+		}), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_storage_root_version_2").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_set_version_1).
+		// WithFunc(ext_storage_set_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			ext_storage_set_version_1(ctx, m, stack[0], stack[1])
+		}), []api.ValueType{api.ValueTypeI64, api.ValueTypeI64}, []api.ValueType{}).
 		Export("ext_storage_set_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_start_transaction_version_1).
+		// WithFunc(ext_storage_start_transaction_version_1).
+		WithGoFunction(api.GoFunc(func(ctx context.Context, stack []uint64) {
+			ext_storage_start_transaction_version_1(ctx, nil)
+		}), []api.ValueType{}, []api.ValueType{}).
 		Export("ext_storage_start_transaction_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_rollback_transaction_version_1).
+		// WithFunc(ext_storage_rollback_transaction_version_1).
+		WithGoFunction(api.GoFunc(func(ctx context.Context, stack []uint64) {
+			ext_storage_rollback_transaction_version_1(ctx, nil)
+		}), []api.ValueType{}, []api.ValueType{}).
 		Export("ext_storage_rollback_transaction_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_storage_commit_transaction_version_1).
+		// WithFunc(ext_storage_commit_transaction_version_1).
+		WithGoFunction(api.GoFunc(func(ctx context.Context, stack []uint64) {
+			ext_storage_commit_transaction_version_1(ctx, nil)
+		}), []api.ValueType{}, []api.ValueType{}).
 		Export("ext_storage_commit_transaction_version_1").
 		NewFunctionBuilder().
-		WithFunc(ext_crypto_ecdsa_generate_version_1).
+		// WithFunc(ext_crypto_ecdsa_generate_version_1).
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
+			stack[0] = api.EncodeU32(ext_crypto_ecdsa_generate_version_1(ctx, m, api.DecodeU32(stack[0]), stack[1]))
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI32}).
 		Export("ext_crypto_ecdsa_generate_version_1").
 		Compile(ctx)
 
@@ -421,7 +622,7 @@ func newRuntimeInstance(ctx context.Context,
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	mod, err := rt.Instantiate(ctx, code)
+	mod, err := rt.InstantiateModule(ctx, guestCompiledModule, wazero.NewModuleConfig().WithName("guest"))
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -431,7 +632,7 @@ func newRuntimeInstance(ctx context.Context,
 
 // NewInstance instantiates a runtime from raw wasm bytecode
 func NewInstance(code []byte, cfg Config) (instance *Instance, err error) {
-	logger.Debug("instantiating a runtime!")
+	logger.Infof("instantiating a runtime!")
 	logger.Patch(log.SetLevel(cfg.LogLvl), log.SetCallerFunc(true))
 
 	// Prepare a cache directory.
@@ -445,7 +646,7 @@ func NewInstance(code []byte, cfg Config) (instance *Instance, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating wazero compilation cache: %w", err)
 	}
-	config := wazero.NewRuntimeConfig().WithCompilationCache(cache)
+	config := wazero.NewRuntimeConfigCompiler().WithCompilationCache(cache)
 	mod, rt, hostCompiledModule, guestCompiledModule, err := newRuntimeInstance(ctx, code, config)
 	if err != nil {
 		return nil, fmt.Errorf("creating runtime instance: %w", err)
@@ -471,6 +672,7 @@ func NewInstance(code []byte, cfg Config) (instance *Instance, err error) {
 			hostModule:  hostCompiledModule,
 			guestModule: guestCompiledModule,
 		},
+		stack: make([]uint64, 4),
 	}
 
 	if cfg.DefaultVersion == nil {
@@ -494,6 +696,9 @@ var ErrExportFunctionNotFound = errors.New("export function not found")
 func (i *Instance) Exec(function string, data []byte) (result []byte, err error) {
 	i.Lock()
 	defer i.Unlock()
+	if function != "Core_execute_block" {
+		logger.Infof("Start Exec: %s\n", function)
+	}
 
 	mod, err := i.Runtime.InstantiateModule(context.Background(), i.metadata.guestModule, wazero.NewModuleConfig())
 	if mod == nil {
@@ -502,7 +707,6 @@ func (i *Instance) Exec(function string, data []byte) (result []byte, err error)
 	if err != nil {
 		return nil, fmt.Errorf("instantiate guest module: %w", err)
 	}
-
 	defer func() {
 		err = mod.Close(context.Background())
 		if err != nil {
@@ -516,7 +720,12 @@ func (i *Instance) Exec(function string, data []byte) (result []byte, err error)
 	}
 
 	heapBase := api.DecodeU32(encodedHeapBase.Get())
-	i.Context.Allocator = allocator.NewFreeingBumpHeapAllocator(heapBase)
+
+	if i.Context.Allocator == nil {
+		i.Context.Allocator = allocator.NewFreeingBumpHeapAllocator(heapBase)
+	} else {
+		i.Context.Allocator.Reset(heapBase)
+	}
 
 	memory := mod.Memory()
 	if memory == nil {
@@ -540,17 +749,20 @@ func (i *Instance) Exec(function string, data []byte) (result []byte, err error)
 	}
 
 	ctx := context.WithValue(context.Background(), runtimeContextKey, i.Context)
-	values, err := runtimeFunc.Call(ctx, api.EncodeU32(inputPtr), api.EncodeU32(dataLength))
+
+	i.stack[0] = api.EncodeU32(inputPtr)
+	i.stack[1] = api.EncodeU32(dataLength)
+	// values, err := runtimeFunc.Call(ctx, api.EncodeU32(inputPtr), api.EncodeU32(dataLength))
+	err = runtimeFunc.CallWithStack(ctx, i.stack)
 	if err != nil {
 		return nil, fmt.Errorf("running runtime function: %w", err)
 	}
-	if len(values) == 0 {
-		return nil, fmt.Errorf("no returned values from runtime function: %s", function)
-	}
-	wasmValue := values[0]
 
-	outputPtr, outputLength := splitPointerSize(wasmValue)
+	i.Context.Allocator.Deallocate(memory, inputPtr) // TODO: This is probably not necessary
+
+	outputPtr, outputLength := splitPointerSize(i.stack[0])
 	result, ok = memory.Read(outputPtr, outputLength)
+	i.Context.Allocator.Deallocate(memory, outputPtr) // TODO: This is probably not necessary
 	if !ok {
 		panic("write overflow")
 	}
@@ -734,12 +946,10 @@ func (in *Instance) FinalizeBlock() (*types.Header, error) {
 // ExecuteBlock calls runtime function Core_execute_block
 func (in *Instance) ExecuteBlock(block *types.Block) ([]byte, error) {
 	// copy block since we're going to modify it
-	b, err := block.DeepCopy()
-	if err != nil {
-		return nil, err
-	}
+	b := *block    // (derefernces block) shallow copy of block
+	h := &b.Header //  refrenfce to header of block b
 
-	b.Header.Digest = types.NewDigest()
+	h.Digest = types.NewDigest()
 
 	// remove seal digest only
 	for _, d := range block.Header.Digest {
@@ -751,7 +961,7 @@ func (in *Instance) ExecuteBlock(block *types.Block) ([]byte, error) {
 		case types.SealDigest:
 			continue
 		default:
-			err = b.Header.Digest.Add(digestValue)
+			err = h.Digest.Add(digestValue)
 			if err != nil {
 				return nil, err
 			}

@@ -358,6 +358,23 @@ func NewFreeingBumpHeapAllocator(heapBase uint32) *FreeingBumpHeapAllocator {
 	}
 }
 
+func (f *FreeingBumpHeapAllocator) Reset(heapBase uint32) {
+	alignedHeapBase := (heapBase + Aligment - 1) / Aligment * Aligment
+	f.originalHeapBase = alignedHeapBase
+	f.bumper = alignedHeapBase
+	f.poisoned = false
+	f.lastObservedMemorySize = 0
+
+	for idx := 0; idx < int(NumOrders); idx++ {
+		f.freeLists.heads[idx] = Nil{}
+	}
+
+	f.stats.bytesAllocated = 0
+	f.stats.bytesAllocatedPeak = 0
+	f.stats.bytesAllocatedSum = big.NewInt(0)
+	f.stats.addressSpaceUsed = 0
+}
+
 // Allocate gets the requested number of bytes to allocate and returns a pointer.
 // The maximum size which can be allocated is 32MiB.
 // There is no minimum size, but whatever size is passed into this function is rounded

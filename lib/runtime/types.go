@@ -48,6 +48,7 @@ func (n *NodeStorage) GetPersistent(k []byte) ([]byte, error) {
 type Allocator interface {
 	Allocate(mem Memory, size uint32) (uint32, error)
 	Deallocate(mem Memory, ptr uint32) error
+	Reset(heapBase uint32)
 }
 
 // Context is the context for the wasm interpreter's imported functions
