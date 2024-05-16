@@ -52,8 +52,8 @@ func newPointerSize(ptr, size uint32) (pointerSize uint64) {
 
 // splitPointerSize converts a 64bit pointer size to an
 // uint32 pointer and a uint32 size.
-func splitPointerSize(pointerSize uint64) (ptr uint32, size uint64) {
-	return uint32(pointerSize), pointerSize >> 32
+func splitPointerSize(pointerSize uint64) (ptr uint32, size uint32) {
+	return uint32(pointerSize), uint32(pointerSize >> 32)
 }
 
 // read will read from 64 bit pointer size and return a byte slice
@@ -391,6 +391,7 @@ func ext_crypto_ecdsa_verify_version_2(ctx context.Context, m api.Module, sig ui
 	if !ok {
 		panic("read overflow")
 	}
+	logger.Errorf("message=0x%x, signature=0x%x", message, signature)
 	pubKey, ok := m.Memory().Read(key, 33)
 	if !ok {
 		panic("read overflow")
@@ -399,7 +400,7 @@ func ext_crypto_ecdsa_verify_version_2(ctx context.Context, m api.Module, sig ui
 	pub := new(secp256k1.PublicKey)
 	err := pub.Decode(pubKey)
 	if err != nil {
-		logger.Errorf("failed to decode public key: %s", err)
+		logger.Errorf("failed to decode public key: %v : %s", pubKey, err)
 		return 0
 	}
 
@@ -685,7 +686,7 @@ func ext_crypto_sr25519_verify_version_1(ctx context.Context, m api.Module, sig 
 		return 0
 	}
 
-	logger.Debugf(
+	logger.Infof(
 		"pub=%s message=0x%x signature=0x%x",
 		pub.Hex(), message, signature)
 
@@ -2250,7 +2251,7 @@ func ext_storage_read_version_1(ctx context.Context, m api.Module, keySpan, valu
 
 	var written uint
 	valueOutPtr, valueOutSize := splitPointerSize(valueOut)
-	if uint64(len(data)) <= valueOutSize {
+	if uint32(len(data)) <= valueOutSize {
 		written = uint(len(data))
 	} else {
 		written = uint(valueOutSize)

@@ -6,6 +6,7 @@ package wazero_runtime
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,9 @@ import (
 	"github.com/ChainSafe/gossamer/pkg/trie"
 	"github.com/adrg/xdg"
 	"github.com/klauspost/compress/zstd"
+	"github.com/tetratelabs/wabin/binary"
+	"github.com/tetratelabs/wabin/leb128"
+	"github.com/tetratelabs/wabin/wasm"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -117,9 +121,8 @@ func newRuntimeInstance(ctx context.Context,
 ) (api.Module, wazero.Runtime, wazero.CompiledModule, wazero.CompiledModule, error) {
 	rt := wazero.NewRuntimeWithConfig(ctx, config)
 
-	hostCompiledModule, err := rt.NewHostModuleBuilder("env").
+	hostCompiledModule, err := rt.NewHostModuleBuilder("host").
 		// values from newer kusama/polkadot runtimes
-		ExportMemory("memory", 23).
 		NewFunctionBuilder().
 		WithFunc(ext_logging_log_version_1).
 		Export("ext_logging_log_version_1").
@@ -237,7 +240,7 @@ func newRuntimeInstance(ctx context.Context,
 		NewFunctionBuilder().
 		// WithFunc(ext_crypto_sr25519_sign_version_1).
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
-			stack[0] = ext_crypto_sr25519_sign_version_1(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[0]), stack[2])
+			stack[0] = ext_crypto_sr25519_sign_version_1(ctx, m, api.DecodeU32(stack[0]), api.DecodeU32(stack[1]), stack[2])
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI64}, []api.ValueType{api.ValueTypeI64}).
 		Export("ext_crypto_sr25519_sign_version_1").
 		NewFunctionBuilder().
@@ -608,26 +611,102 @@ func newRuntimeInstance(ctx context.Context,
 		return nil, nil, nil, nil, err
 	}
 
-	_, err = rt.InstantiateModule(ctx, hostCompiledModule, wazero.NewModuleConfig())
+	hmod, err := rt.InstantiateModule(ctx, hostCompiledModule, wazero.NewModuleConfig())
+
+	logger.Infof("host exported memorys: %v\n", hmod.ExportedMemoryDefinitions())
+
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+
+	proxyBin := NewModuleBinary("host", hostCompiledModule)
+
+	proxyMod, err := rt.Instantiate(ctx, proxyBin)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	logger.Infof("proxy  exported memorys: %v\n", proxyMod.ExportedMemoryDefinitions())
 
 	code, err = decompressWasm(code)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-
 	guestCompiledModule, err := rt.CompileModule(ctx, code)
+	logger.Infof("guestCompiledModule imported memorys: %v, exported memorys: %v\n", guestCompiledModule.ImportedMemories(), guestCompiledModule.ExportedMemories())
+
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	mod, err := rt.InstantiateModule(ctx, guestCompiledModule, wazero.NewModuleConfig().WithName("guest"))
+	logger.Infof("guestCompiledModule  exported memorys: %v\n", mod.ExportedMemoryDefinitions())
+	logger.Infof("Guested compiled module memory defn: %v\n", mod.Memory().Definition().(api.ExportDefinition))
+
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
 	return mod, rt, hostCompiledModule, guestCompiledModule, nil
+}
+
+func NewModuleBinary(moduleName string, proxyTarget wazero.CompiledModule) []byte {
+	funcDefs := proxyTarget.ExportedFunctions()
+	funcNum := uint32(len(funcDefs))
+	logger.Infof("proxyTarget exported memories %v\n", proxyTarget.ExportedMemories())
+	proxyModule := &wasm.Module{
+		MemorySection: &wasm.Memory{Min: 30000},
+		ExportSection: []*wasm.Export{{Name: "memory", Type: api.ExternTypeMemory}},
+		NameSection:   &wasm.NameSection{ModuleName: "env"},
+	}
+	var cnt wasm.Index
+	for _, def := range funcDefs {
+		proxyModule.TypeSection = append(proxyModule.TypeSection, &wasm.FunctionType{
+			Params: def.ParamTypes(), Results: def.ResultTypes(),
+		})
+
+		// Imports the function.
+		name := def.ExportNames()[0]
+		proxyModule.ImportSection = append(proxyModule.ImportSection, &wasm.Import{
+			Module:   moduleName,
+			Name:     name,
+			DescFunc: cnt,
+		})
+
+		// Ensures that type of the proxy function matches the imported function.
+		proxyModule.FunctionSection = append(proxyModule.FunctionSection, cnt)
+
+		// Build the function body of the proxy function.
+		var body []byte
+		for i := range def.ParamTypes() {
+			body = append(body, wasm.OpcodeLocalGet)
+			body = append(body, leb128.EncodeUint32(uint32(i))...)
+		}
+
+		body = append(body, wasm.OpcodeCall)
+		body = append(body, leb128.EncodeUint32(cnt)...)
+		body = append(body, wasm.OpcodeEnd)
+		proxyModule.CodeSection = append(proxyModule.CodeSection, &wasm.Code{Body: body})
+
+		proxyFuncIndex := cnt + funcNum
+		// Assigns the same params name as the imported one.
+		paramNames := wasm.NameMapAssoc{Index: proxyFuncIndex}
+		for i, n := range def.ParamNames() {
+			paramNames.NameMap = append(paramNames.NameMap, &wasm.NameAssoc{Index: wasm.Index(i), Name: n})
+		}
+		proxyModule.NameSection.LocalNames = append(proxyModule.NameSection.LocalNames, &paramNames)
+
+		// Plus, assigns the same function name.
+		proxyModule.NameSection.FunctionNames = append(proxyModule.NameSection.FunctionNames,
+			&wasm.NameAssoc{Index: proxyFuncIndex, Name: name})
+
+		// Finally, exports the proxy function with the same name as the imported one.
+		proxyModule.ExportSection = append(proxyModule.ExportSection, &wasm.Export{
+			Type:  wasm.ExternTypeFunc,
+			Name:  name,
+			Index: proxyFuncIndex,
+		})
+		cnt++
+	}
+	return binary.EncodeModule(proxyModule)
 }
 
 // NewInstance instantiates a runtime from raw wasm bytecode
@@ -672,7 +751,7 @@ func NewInstance(code []byte, cfg Config) (instance *Instance, err error) {
 			hostModule:  hostCompiledModule,
 			guestModule: guestCompiledModule,
 		},
-		stack: make([]uint64, 4),
+		stack: make([]uint64, 2),
 	}
 
 	if cfg.DefaultVersion == nil {
@@ -700,19 +779,15 @@ func (i *Instance) Exec(function string, data []byte) (result []byte, err error)
 		logger.Infof("Start Exec: %s\n", function)
 	}
 
-	mod, err := i.Runtime.InstantiateModule(context.Background(), i.metadata.guestModule, wazero.NewModuleConfig())
+	mod := i.Runtime.Module("guest")
+	// mod, err := i.Runtime.InstantiateModule(context.Background(), i.metadata.guestModule, wazero.NewModuleConfig())
+
 	if mod == nil {
 		return nil, fmt.Errorf("instantiate guest module: nil")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("instantiate guest module: %w", err)
 	}
-	defer func() {
-		err = mod.Close(context.Background())
-		if err != nil {
-			logger.Criticalf("guest module not closed: %w", err)
-		}
-	}()
 
 	encodedHeapBase := mod.ExportedGlobal("__heap_base")
 	if encodedHeapBase == nil {
@@ -721,13 +796,21 @@ func (i *Instance) Exec(function string, data []byte) (result []byte, err error)
 
 	heapBase := api.DecodeU32(encodedHeapBase.Get())
 
-	if i.Context.Allocator == nil {
-		i.Context.Allocator = allocator.NewFreeingBumpHeapAllocator(heapBase)
-	} else {
-		i.Context.Allocator.Reset(heapBase)
-	}
+	// if i.Context.Allocator == nil {
+	i.Context.Allocator = allocator.NewFreeingBumpHeapAllocator(heapBase)
+	// } else {
+	// 	i.Context.Allocator.Reset(heapBase)
+	// }
+
+	// memory := i.Runtime.Module("env").ExportedMemory("memory")
+	// logger.Infof("env MEMZ %v\n", i.Runtime.Module("env").ExportedMemoryDefinitions())
+	// logger.Infof("guest MEMZ %v\n", i.Runtime.Module("guest").ExportedMemoryDefinitions())
 
 	memory := mod.Memory()
+	if memory != i.Runtime.Module("env").Memory() {
+		panic("memory mismatch")
+	}
+	// memory := i.Runtime.Module("env").Memory()
 	if memory == nil {
 		panic("nil memory")
 	}
@@ -758,11 +841,11 @@ func (i *Instance) Exec(function string, data []byte) (result []byte, err error)
 		return nil, fmt.Errorf("running runtime function: %w", err)
 	}
 
-	i.Context.Allocator.Deallocate(memory, inputPtr) // TODO: This is probably not necessary
+	// i.Context.Allocator.Deallocate(memory, inputPtr) // TODO: This is probably not necessary
 
 	outputPtr, outputLength := splitPointerSize(i.stack[0])
 	result, ok = memory.Read(outputPtr, outputLength)
-	i.Context.Allocator.Deallocate(memory, outputPtr) // TODO: This is probably not necessary
+	// i.Context.Allocator.Deallocate(memory, outputPtr) // TODO: This is probably not necessary
 	if !ok {
 		panic("write overflow")
 	}

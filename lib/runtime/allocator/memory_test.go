@@ -19,15 +19,15 @@ func (m *MemoryInstance) setMaxWasmPages(max uint32) {
 }
 
 func (m *MemoryInstance) pages() uint32 {
-	pages, ok := pagesFromSize(uint64(len(m.data)))
+	pages, ok := pagesFromSize(uint32(len(m.data)))
 	if !ok {
 		panic("cannot get page number")
 	}
 	return pages
 }
 
-func (m *MemoryInstance) Size() uint64 {
-	return uint64(m.pages() * PageSize)
+func (m *MemoryInstance) Size() uint32 {
+	return uint32(m.pages() * PageSize)
 }
 
 func (m *MemoryInstance) Grow(pages uint32) (uint32, bool) {
@@ -54,7 +54,7 @@ func (m *MemoryInstance) WriteUint64Le(offset uint32, v uint64) bool {
 	copy(m.data[offset:offset+8], encoded)
 	return true
 }
-func (*MemoryInstance) Read(_ uint32, _ uint64) ([]byte, bool) {
+func (*MemoryInstance) Read(_ uint32, _ uint32) ([]byte, bool) {
 	return nil, false
 }
 

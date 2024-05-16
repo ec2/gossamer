@@ -38,7 +38,7 @@ const (
 	MaxPossibleAllocations uint32 = 33554432
 
 	PageSize     = 65536
-	MaxWasmPages = 4 * 1024 * 1024 * 1024 / PageSize
+	MaxWasmPages = (4 * 1024 * 1024 * 1024 / PageSize)
 )
 
 var (
@@ -337,7 +337,7 @@ type FreeingBumpHeapAllocator struct {
 	bumper                 uint32
 	freeLists              *FreeLists
 	poisoned               bool
-	lastObservedMemorySize uint64
+	lastObservedMemorySize uint32
 	stats                  AllocationStats
 }
 
@@ -388,7 +388,7 @@ func (f *FreeingBumpHeapAllocator) Reset(heapBase uint32) {
 //
 // - `mem` - a slice representing the linear memory on which this allocator operates.
 // - size: size in bytes of the allocation request
-func (f *FreeingBumpHeapAllocator) Allocate(mem runtime.Memory, size uint32) (ptr uint32, err error) {
+func (f *FreeingBumpHeapAllocator) Allocate(mem runtime.Memory, ssize uint32) (ptr uint32, err error) {
 	if f.poisoned {
 		return 0, ErrAllocatorPoisoned
 	}
@@ -398,14 +398,15 @@ func (f *FreeingBumpHeapAllocator) Allocate(mem runtime.Memory, size uint32) (pt
 			f.poisoned = true
 		}
 	}()
+	size, _ := mem.Grow(0)
 
-	if mem.Size() < f.lastObservedMemorySize {
+	if size*PageSize < f.lastObservedMemorySize {
 		return 0, ErrMemoryShrunk
 	}
 
-	f.lastObservedMemorySize = mem.Size()
+	f.lastObservedMemorySize = size * PageSize
 
-	order, err := orderFromSize(size)
+	order, err := orderFromSize(ssize)
 	if err != nil {
 		return 0, fmt.Errorf("order from size: %w", err)
 	}
@@ -415,7 +416,7 @@ func (f *FreeingBumpHeapAllocator) Allocate(mem runtime.Memory, size uint32) (pt
 	link := f.freeLists.heads[order]
 	switch value := link.(type) {
 	case Ptr:
-		if uint64(value.headerPtr)+uint64(order.size())+uint64(HeaderSize) > mem.Size() {
+		if uint64(value.headerPtr)+uint64(order.size())+uint64(HeaderSize) > uint64(size*PageSize) {
 			return 0, fmt.Errorf("%w: pointer: %d, order size: %d",
 				ErrInvalidHeaderPointerDetected, value.headerPtr, order.size())
 		}
@@ -485,12 +486,13 @@ func (f *FreeingBumpHeapAllocator) Deallocate(mem runtime.Memory, ptr uint32) (e
 			f.poisoned = true
 		}
 	}()
+	size, _ := mem.Grow(0)
 
-	if mem.Size() < f.lastObservedMemorySize {
+	if size*PageSize < f.lastObservedMemorySize {
 		return ErrMemoryShrunk
 	}
 
-	f.lastObservedMemorySize = mem.Size()
+	f.lastObservedMemorySize = size * PageSize
 
 	headerPtr, ok := checkedSub(ptr, HeaderSize)
 	if !ok {
@@ -524,18 +526,18 @@ func (f *FreeingBumpHeapAllocator) Deallocate(mem runtime.Memory, ptr uint32) (e
 	return nil
 }
 
-func bump(bumper *uint32, size uint32, mem runtime.Memory) (uint32, error) {
-	requiredSize := uint64(*bumper) + uint64(size)
-
-	if requiredSize > mem.Size() {
+func bump(bumper *uint32, ssize uint32, mem runtime.Memory) (uint32, error) {
+	requiredSize := *bumper + ssize
+	size, _ := mem.Grow(0)
+	if requiredSize > size*PageSize {
 		requiredPages, ok := pagesFromSize(requiredSize)
 		if !ok {
 			return 0, fmt.Errorf("%w: cannot calculate number of pages from size %d", ErrAllocatorOutOfSpace, requiredSize)
 		}
 
-		currentPages, ok := pagesFromSize(mem.Size())
+		currentPages, ok := pagesFromSize(size * PageSize)
 		if !ok {
-			panic(fmt.Sprintf("page size cannot fit into uint32, current memory size: %d", mem.Size()))
+			panic(fmt.Sprintf("page size cannot fit into uint32, current memory size: %d", size*PageSize))
 		}
 
 		if currentPages >= MaxWasmPages {
@@ -560,14 +562,14 @@ func bump(bumper *uint32, size uint32, mem runtime.Memory) (uint32, error) {
 				ErrCannotGrowLinearMemory, currentPages, nextPages)
 		}
 
-		pagesIncrease := (mem.Size() / PageSize) == uint64(nextPages)
+		pagesIncrease := ((size * PageSize) / PageSize) == nextPages
 		if !pagesIncrease {
 			logger.Errorf("number of pages should have increased! previous: %d, desired: %d", currentPages, nextPages)
 		}
 	}
 
 	res := *bumper
-	*bumper += size
+	*bumper += ssize
 	return res, nil
 }
 
@@ -575,10 +577,10 @@ func bump(bumper *uint32, size uint32, mem runtime.Memory) (uint32, error) {
 // The returned number of pages is ensured to be big enough to hold memory
 // with the given `size`.
 // Returns false if the number of pages does not fit into `uint32`
-func pagesFromSize(size uint64) (uint32, bool) {
-	value := (size + uint64(PageSize) - 1) / uint64(PageSize)
+func pagesFromSize(size uint32) (uint32, bool) {
+	value := (size + PageSize - 1) / PageSize
 
-	if value > uint64(math.MaxUint32) {
+	if value > math.MaxUint32 {
 		return 0, false
 	}
 

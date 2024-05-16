@@ -521,6 +521,7 @@ func Test_ext_crypto_sr25519_verify_version_1(t *testing.T) {
 
 	var read *[]byte
 	err = scale.Unmarshal(ret, &read)
+	logger.Infof("read: %v", read)
 	require.NoError(t, err)
 	require.NotNil(t, read)
 }
