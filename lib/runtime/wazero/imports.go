@@ -52,8 +52,8 @@ func newPointerSize(ptr, size uint32) (pointerSize uint64) {
 
 // splitPointerSize converts a 64bit pointer size to an
 // uint32 pointer and a uint32 size.
-func splitPointerSize(pointerSize uint64) (ptr uint32, size uint64) {
-	return uint32(pointerSize), pointerSize >> 32
+func splitPointerSize(pointerSize uint64) (ptr uint32, size uint32) {
+	return uint32(pointerSize), uint32(pointerSize >> 32)
 }
 
 // read will read from 64 bit pointer size and return a byte slice
@@ -118,11 +118,15 @@ func ext_crypto_ecdsa_generate_version_1(ctx context.Context, m api.Module, _ ui
 
 func ext_crypto_ed25519_generate_version_1(
 	ctx context.Context, m api.Module, keyTypeID uint32, seedSpan uint64) uint32 {
+
 	id, ok := m.Memory().Read(keyTypeID, 4)
+	logger.Infof("id: %v\n", id)
+
 	if !ok {
 		panic("out of range read")
 	}
 	seedBytes := read(m, seedSpan)
+	logger.Infof("seedbytes: %v\n", seedBytes)
 
 	var seed *[]byte
 	err := scale.Unmarshal(seedBytes, &seed)
@@ -2250,7 +2254,7 @@ func ext_storage_read_version_1(ctx context.Context, m api.Module, keySpan, valu
 
 	var written uint
 	valueOutPtr, valueOutSize := splitPointerSize(valueOut)
-	if uint64(len(data)) <= valueOutSize {
+	if uint64(len(data)) <= uint64(valueOutSize) {
 		written = uint(len(data))
 	} else {
 		written = uint(valueOutSize)

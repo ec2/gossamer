@@ -6,6 +6,7 @@ package wazero_runtime
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"sync"
@@ -23,6 +24,9 @@ import (
 	"github.com/ChainSafe/gossamer/pkg/scale"
 	"github.com/ChainSafe/gossamer/pkg/trie"
 	"github.com/klauspost/compress/zstd"
+	"github.com/tetratelabs/wabin/binary"
+	"github.com/tetratelabs/wabin/leb128"
+	"github.com/tetratelabs/wabin/wasm"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -40,6 +44,7 @@ type wazeroMeta struct {
 	config      wazero.RuntimeConfig
 	cache       wazero.CompilationCache
 	guestModule wazero.CompiledModule
+	hostModule  wazero.CompiledModule
 }
 
 // Instance backed by wazero.Runtime
@@ -110,14 +115,14 @@ func NewInstanceFromTrie(t trie.Trie, cfg Config) (*Instance, error) {
 func newRuntime(ctx context.Context,
 	code []byte,
 	config wazero.RuntimeConfig,
-) (api.Module, wazero.Runtime, wazero.CompiledModule, error) {
+) (wazero.Runtime, wazero.CompiledModule, wazero.CompiledModule, error) {
 	rt := wazero.NewRuntimeWithConfig(ctx, config)
 
 	const i32, i64 = api.ValueTypeI32, api.ValueTypeI64
 
-	hostCompiledModule, err := rt.NewHostModuleBuilder("env").
+	hostCompiledModule, err := rt.NewHostModuleBuilder("host").
 		// values from newer kusama/polkadot runtimes
-		ExportMemory("memory", 23).
+		// ExportMemory("memory", 23).
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, m api.Module, stack []uint64) {
 			ext_logging_log_version_1(ctx, m, api.DecodeI32(stack[0]), stack[1], stack[2])
@@ -650,25 +655,95 @@ func newRuntime(ctx context.Context,
 	}
 
 	_, err = rt.InstantiateModule(ctx, hostCompiledModule, wazero.NewModuleConfig())
+
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
+	proxyBin := NewModuleBinary("host", hostCompiledModule)
+
+	_, err = rt.Instantiate(ctx, proxyBin)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// logger.Infof("proxy exported memorys: %v\n", proxyMod.ExportedMemoryDefinitions())
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	code, err = decompressWasm(code)
+
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
 	guestCompiledModule, err := rt.CompileModule(ctx, code)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	mod, err := rt.Instantiate(ctx, code)
+
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return mod, rt, guestCompiledModule, nil
+	return rt, hostCompiledModule, guestCompiledModule, nil
+}
+
+func NewModuleBinary(moduleName string, proxyTarget wazero.CompiledModule) []byte {
+	funcDefs := proxyTarget.ExportedFunctions()
+	funcNum := uint32(len(funcDefs))
+	logger.Infof("proxyTarget exported memories %v\n", proxyTarget.ExportedMemories())
+	proxyModule := &wasm.Module{
+		MemorySection: &wasm.Memory{Min: 22},
+		ExportSection: []*wasm.Export{{Name: "memory", Type: api.ExternTypeMemory}},
+		NameSection:   &wasm.NameSection{ModuleName: "env"},
+	}
+	var cnt wasm.Index
+	for _, def := range funcDefs {
+		proxyModule.TypeSection = append(proxyModule.TypeSection, &wasm.FunctionType{
+			Params: def.ParamTypes(), Results: def.ResultTypes(),
+		})
+
+		// Imports the function.
+		name := def.ExportNames()[0]
+		proxyModule.ImportSection = append(proxyModule.ImportSection, &wasm.Import{
+			Module:   moduleName,
+			Name:     name,
+			DescFunc: cnt,
+		})
+
+		// Ensures that type of the proxy function matches the imported function.
+		proxyModule.FunctionSection = append(proxyModule.FunctionSection, cnt)
+
+		// Build the function body of the proxy function.
+		var body []byte
+		for i := range def.ParamTypes() {
+			body = append(body, wasm.OpcodeLocalGet)
+			body = append(body, leb128.EncodeUint32(uint32(i))...)
+		}
+
+		body = append(body, wasm.OpcodeCall)
+		body = append(body, leb128.EncodeUint32(cnt)...)
+		body = append(body, wasm.OpcodeEnd)
+		proxyModule.CodeSection = append(proxyModule.CodeSection, &wasm.Code{Body: body})
+
+		proxyFuncIndex := cnt + funcNum
+		// Assigns the same params name as the imported one.
+		paramNames := wasm.NameMapAssoc{Index: proxyFuncIndex}
+		for i, n := range def.ParamNames() {
+			paramNames.NameMap = append(paramNames.NameMap, &wasm.NameAssoc{Index: wasm.Index(i), Name: n})
+		}
+		proxyModule.NameSection.LocalNames = append(proxyModule.NameSection.LocalNames, &paramNames)
+
+		// Plus, assigns the same function name.
+		proxyModule.NameSection.FunctionNames = append(proxyModule.NameSection.FunctionNames,
+			&wasm.NameAssoc{Index: proxyFuncIndex, Name: name})
+
+		// Finally, exports the proxy function with the same name as the imported one.
+		proxyModule.ExportSection = append(proxyModule.ExportSection, &wasm.Export{
+			Type:  wasm.ExternTypeFunc,
+			Name:  name,
+			Index: proxyFuncIndex,
+		})
+		cnt++
+	}
+	return binary.EncodeModule(proxyModule)
 }
 
 // NewInstance instantiates a runtime from raw wasm bytecode
@@ -679,8 +754,10 @@ func NewInstance(code []byte, cfg Config) (instance *Instance, err error) {
 	// Prepare a cache directory.
 	ctx := context.Background()
 	cache := wazero.NewCompilationCache()
-	config := wazero.NewRuntimeConfig().WithCompilationCache(cache)
-	mod, rt, guestCompiledModule, err := newRuntime(ctx, code, config)
+	config := wazero.NewRuntimeConfig().WithMemoryCapacityFromMax(true)
+
+	rt, hostCompiledModule, guestCompiledModule, err := newRuntime(ctx, code, config)
+
 	if err != nil {
 		return nil, fmt.Errorf("creating runtime instance: %w", err)
 	}
@@ -697,12 +774,12 @@ func NewInstance(code []byte, cfg Config) (instance *Instance, err error) {
 			SigVerifier:     crypto.NewSignatureVerifier(logger),
 			OffchainHTTPSet: offchain.NewHTTPSet(),
 		},
-		Module:   mod,
 		codeHash: cfg.CodeHash,
 		metadata: wazeroMeta{
 			config:      config,
 			cache:       cache,
 			guestModule: guestCompiledModule,
+			hostModule:  hostCompiledModule,
 		},
 	}
 
@@ -727,17 +804,16 @@ var ErrExportFunctionNotFound = errors.New("export function not found")
 func (i *Instance) Exec(function string, data []byte) ([]byte, error) {
 	i.Lock()
 	defer i.Unlock()
+	ctx := context.WithValue(context.Background(), runtimeContextKey, i.Context)
 
-	mod, err := i.Runtime.InstantiateModule(context.Background(), i.metadata.guestModule, wazero.NewModuleConfig())
-	if mod == nil {
-		return nil, fmt.Errorf("instantiate guest module: nil")
-	}
+	mod, err := i.Runtime.InstantiateModule(ctx, i.metadata.guestModule, wazero.NewModuleConfig())
+
 	if err != nil {
 		return nil, fmt.Errorf("instantiate guest module: %w", err)
 	}
 
 	defer func() {
-		err = mod.Close(context.Background())
+		err := mod.Close(ctx)
 		if err != nil {
 			logger.Criticalf("guest module not closed: %w", err)
 		}
@@ -752,6 +828,7 @@ func (i *Instance) Exec(function string, data []byte) ([]byte, error) {
 	i.Context.Allocator = allocator.NewFreeingBumpHeapAllocator(heapBase)
 
 	memory := mod.Memory()
+
 	if memory == nil {
 		panic("nil memory")
 	}
@@ -772,7 +849,6 @@ func (i *Instance) Exec(function string, data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %s", ErrExportFunctionNotFound, function)
 	}
 
-	ctx := context.WithValue(context.Background(), runtimeContextKey, i.Context)
 	values, err := runtimeFunc.Call(ctx, api.EncodeU32(inputPtr), api.EncodeU32(dataLength))
 	if err != nil {
 		return nil, fmt.Errorf("running runtime function: %w", err)

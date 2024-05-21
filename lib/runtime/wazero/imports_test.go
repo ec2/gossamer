@@ -79,6 +79,7 @@ func Test_ext_crypto_ed25519_generate_version_1(t *testing.T) {
 	require.NoError(t, err)
 
 	params := append(idData, seedData...) //skipcq: CRT-D0001
+	logger.Infof("idData: %v", params)
 
 	pubKeyBytes, err := inst.Exec("rtm_ext_crypto_ed25519_generate_version_1", params)
 	require.NoError(t, err)
@@ -877,16 +878,17 @@ func Test_ext_misc_runtime_version_version_1(t *testing.T) {
 
 	allocator := allocator.NewFreeingBumpHeapAllocator(0)
 	inst.Context.Allocator = allocator
+	mod := inst.Runtime.Module("guest")
 
 	data := bytes
 	dataLength := uint32(len(data))
-	inputPtr, err := inst.Context.Allocator.Allocate(inst.Module.Memory(), dataLength)
+	inputPtr, err := inst.Context.Allocator.Allocate(mod.Memory(), dataLength)
 	if err != nil {
 		t.Errorf("allocating input memory: %v", err)
 	}
 
 	// Store the data into memory
-	mem := inst.Module.Memory()
+	mem := mod.Memory()
 	ok := mem.Write(inputPtr, data)
 	if !ok {
 		panic("write overlow")
@@ -894,10 +896,10 @@ func Test_ext_misc_runtime_version_version_1(t *testing.T) {
 
 	dataSpan := newPointerSize(inputPtr, dataLength)
 	ctx := context.WithValue(context.Background(), runtimeContextKey, inst.Context)
-	versionPtr := ext_misc_runtime_version_version_1(ctx, inst.Module, dataSpan)
+	versionPtr := ext_misc_runtime_version_version_1(ctx, mod, dataSpan)
 
 	var option *[]byte
-	versionData := read(inst.Module, versionPtr)
+	versionData := read(mod, versionPtr)
 	err = scale.Unmarshal(versionData, &option)
 	require.NoError(t, err)
 	require.NotNil(t, option)

@@ -381,12 +381,18 @@ func (f *FreeingBumpHeapAllocator) Allocate(mem runtime.Memory, size uint32) (pt
 			f.poisoned = true
 		}
 	}()
-
-	if mem.Size() < f.lastObservedMemorySize {
+	s, sErr := mem.Grow(0)
+	if !sErr {
+		return 0, fmt.Errorf("memory grow(0) i.e. get size\n")
+	}
+	if uint64(s)*65536 < f.lastObservedMemorySize {
 		return 0, ErrMemoryShrunk
 	}
-
-	f.lastObservedMemorySize = mem.Size()
+	s, sErr = mem.Grow(0)
+	if !sErr {
+		return 0, fmt.Errorf("memory grow(0) i.e. get size\n")
+	}
+	f.lastObservedMemorySize = uint64(s) * 65536
 
 	order, err := orderFromSize(size)
 	if err != nil {
@@ -398,7 +404,11 @@ func (f *FreeingBumpHeapAllocator) Allocate(mem runtime.Memory, size uint32) (pt
 	link := f.freeLists.heads[order]
 	switch value := link.(type) {
 	case Ptr:
-		if uint64(value.headerPtr)+uint64(order.size())+uint64(HeaderSize) > mem.Size() {
+		s, sErr = mem.Grow(0)
+		if !sErr {
+			return 0, fmt.Errorf("memory grow(0) i.e. get size\n")
+		}
+		if uint64(value.headerPtr)+uint64(order.size())+uint64(HeaderSize) > uint64(s)*65536 {
 			return 0, fmt.Errorf("%w: pointer: %d, order size: %d",
 				ErrInvalidHeaderPointerDetected, value.headerPtr, order.size())
 		}
@@ -468,12 +478,15 @@ func (f *FreeingBumpHeapAllocator) Deallocate(mem runtime.Memory, ptr uint32) (e
 			f.poisoned = true
 		}
 	}()
-
-	if mem.Size() < f.lastObservedMemorySize {
+	s, sErr := mem.Grow(0)
+	if !sErr {
+		return fmt.Errorf("memory grow(0) i.e. get size\n")
+	}
+	if uint64(s)*65536 < f.lastObservedMemorySize {
 		return ErrMemoryShrunk
 	}
 
-	f.lastObservedMemorySize = mem.Size()
+	f.lastObservedMemorySize = uint64(s) * 65536
 
 	headerPtr, ok := checkedSub(ptr, HeaderSize)
 	if !ok {
@@ -509,16 +522,23 @@ func (f *FreeingBumpHeapAllocator) Deallocate(mem runtime.Memory, ptr uint32) (e
 
 func bump(bumper *uint32, size uint32, mem runtime.Memory) (uint32, error) {
 	requiredSize := uint64(*bumper) + uint64(size)
-
-	if requiredSize > mem.Size() {
+	s, sErr := mem.Grow(0)
+	if !sErr {
+		return 0, fmt.Errorf("memory grow(0) i.e. get size")
+	}
+	if requiredSize > uint64(s)*65536 {
+		s, sErr = mem.Grow(0)
+		if !sErr {
+			return 0, fmt.Errorf("memory grow(0) i.e. get size")
+		}
 		requiredPages, ok := pagesFromSize(requiredSize)
 		if !ok {
 			return 0, fmt.Errorf("%w: cannot calculate number of pages from size %d", ErrAllocatorOutOfSpace, requiredSize)
 		}
 
-		currentPages, ok := pagesFromSize(mem.Size())
+		currentPages, ok := pagesFromSize(uint64(s) * 65536)
 		if !ok {
-			panic(fmt.Sprintf("page size cannot fit into uint32, current memory size: %d", mem.Size()))
+			panic(fmt.Sprintf("page size cannot fit into uint32, current memory size: %d", uint64(s)*65536))
 		}
 
 		if currentPages >= MaxWasmPages {
@@ -542,8 +562,11 @@ func bump(bumper *uint32, size uint32, mem runtime.Memory) (uint32, error) {
 			return 0, fmt.Errorf("%w: from %d pages to %d pages",
 				ErrCannotGrowLinearMemory, currentPages, nextPages)
 		}
-
-		pagesIncrease := (mem.Size() / PageSize) == uint64(nextPages)
+		s, sErr := mem.Grow(0)
+		if !sErr {
+			return 0, fmt.Errorf("memory grow(0) i.e. get size")
+		}
+		pagesIncrease := uint64(s) == uint64(nextPages)
 		if !pagesIncrease {
 			logger.Errorf("number of pages should have increased! previous: %d, desired: %d", currentPages, nextPages)
 		}

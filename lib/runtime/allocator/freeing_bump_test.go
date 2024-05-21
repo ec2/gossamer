@@ -248,7 +248,8 @@ func TestShouldReturnErrorWhenBumperGreaterThanHeapSize(t *testing.T) {
 	// further allocation which would increment the bumper must fail.
 	// we try to allocate 8 bytes here, which will increment the
 	// bumper since no 8 byte item has been freed before.
-	require.Equal(t, uint64(heap.bumper), mem.Size())
+	s, _ := mem.Grow(0)
+	require.Equal(t, uint64(heap.bumper), uint64(s)*PageSize)
 
 	ptr, err := heap.Allocate(mem, 8)
 	require.Zero(t, ptr)
